@@ -292,6 +292,12 @@ def test_report_contains_failures_only(tmp_path):
     assert "patch" not in document
 
 
+def test_action_keeps_the_report_out_of_the_checkout():
+    text = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert "runner.temp" in text
+    assert "${{ github.workspace }}/review-report.json" not in text
+
+
 def test_build_job_depends_on_review_gate():
     workflow = yaml.safe_load(
         (ROOT / "examples" / "deploy.yml").read_text(encoding="utf-8")

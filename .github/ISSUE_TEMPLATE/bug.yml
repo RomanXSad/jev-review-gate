@@ -1,0 +1,26 @@
+name: Bug
+description: The gate allowed or blocked a diff for the wrong reason
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The rule id, the Jev choice or score, and the commit range. Leave out secrets and private diffs.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Action ref
+      description: Tag or SHA, for example v0.1.0
+      placeholder: v0.1.0
+    validations:
+      required: true

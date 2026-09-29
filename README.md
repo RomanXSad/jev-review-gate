@@ -1,8 +1,11 @@
 # Jev review gate
 
+[![Tests](https://github.com/RomanXSad/jev-review-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/RomanXSad/jev-review-gate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A GitHub Actions check that reads your diff, applies a few local rules, and asks [TypeSafe Jev](https://typesafe.ai) (`POST https://api.typesafe.ai/v1/systemone`, model `jev-latest`) the questions in your rule pack. The action exits 0 or 1. Jev does not merge, tag, or push. Any later job that `needs` this one stays skipped until the gate passes.
 
-MIT licensed. Free to use, copy, and change.
+**v0.1.0.** Free to use, copy, and change under the [MIT license](LICENSE). Read the [limits](#-todo) before you treat a green run on a large diff as a full review.
 
 Author: Roman \<gdeadbones@gmail.com\>
 
@@ -109,7 +112,7 @@ Choice questions live in `rules/jev/*.yml`. The local combiner treats `fail_on: 
 
 ## 📋 Failure report
 
-On failure the job log contains JSON between `REVIEW_REPORT_JSON_BEGIN` and `REVIEW_REPORT_JSON_END`. The report lists failed rules, the Jev choice or score, and the commit range. It does not include the patch. The action does not upload an artifact.
+On failure the job log contains JSON between `REVIEW_REPORT_JSON_BEGIN` and `REVIEW_REPORT_JSON_END`. The report lists failed rules, the Jev choice or score, and the commit range. It does not include the patch. The action writes that file under the runner temp directory, not into your checkout, and it does not upload an artifact.
 
 ## 🤖 Optional Cursor wait
 
@@ -146,3 +149,10 @@ pytest
 ```
 
 Python 3.11 or newer. Tests do not call the network. Agents changing this repository should follow [AGENTS.md](AGENTS.md).
+
+## 🤝 Community
+
+- [Contributing](CONTRIBUTING.md) — tests, and how to add a rule
+- [Security](SECURITY.md) — where to report a vulnerability, and where the API key stays
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [License](LICENSE)

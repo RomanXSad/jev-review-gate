@@ -41,4 +41,4 @@ runs:
         python3 "${{ github.action_path }}/scripts/review_gate.py"
         --repo "${{ github.workspace }}"
         --rules "${{ inputs.rules-path }}"
-        --output "${{ github.workspace }}/review-report.json"
+        --output "${{ runner.temp }}/review-report.json"

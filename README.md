@@ -11,7 +11,17 @@ Author: Roman
 
 ## 🎯 The problem
 
-A push can start the next job while the diff still rewrites production data, points production at a stub, or skips a check outside test. Exact-string rules catch a private key. They do not read the change. Several red commits can follow one green one, and a review of only the latest commit misses what the earlier commits left in the branch.
+A workflow that builds or deploys on every push starts that job because the push succeeded. Nothing in the pipeline reads the diff and decides whether this change is safe to ship.
+
+These are the changes that get through:
+
+- A migration rewrites or deletes existing data, and the reverse is a no-op.
+- Production code gains a test host, `ALLOWED_HOSTS` of `*`, a local-only secret, or a frontend bundle that calls localhost.
+- A payment signature, webhook check, or auth gate is skipped outside test, or a new route runs a shell with no login.
+
+A regex can catch a private key in the diff. It cannot tell an irreversible migration from a new nullable column, or a bypass that stays in test from one that now runs in production.
+
+The other hole is the commit window. A branch often fails the gate more than once, and the last commit fixes only part of what the earlier commits introduced. A review of that last commit alone leaves the rest of the unsafe diff in the branch, and the protected job still ships it.
 
 ## ✨ What this brings
 

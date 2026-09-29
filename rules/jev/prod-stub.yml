@@ -1,0 +1,17 @@
+id: prod-stub
+questions:
+  test_default:
+    type: choice
+    instructions: >
+      Judge only this diff. Choose block when production code, outside tests,
+      gains a test host or mock URL as a default, an ALLOWED_HOSTS fallback
+      of "*", a local-only secret or a literal encryption key as a fallback,
+      or the frontend bundle points the API or KEP at localhost, 127.0.0.1,
+      or a mock pay host. Choose allow when the change is in a test file, or
+      when a dev-only host check stays inside a dev-only branch. If the diff
+      does not show this clearly, choose allow.
+    criteria:
+      block: Production path or bundle now defaults to a test host, a wildcard host, a local secret, or a mock
+      allow: No such default was added, or it is confined to tests or a dev-only branch
+    fail_on:
+      - block

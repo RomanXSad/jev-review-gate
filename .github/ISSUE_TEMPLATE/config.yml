@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Open an issue
+    url: https://github.com/RomanXSad/jev-review-gate/issues/new/choose
+    about: Bug reports and security notes. Leave out tokens and private diffs.

@@ -1,0 +1,16 @@
+id: unsafe-migration
+questions:
+  data_rewrite:
+    type: choice
+    instructions: >
+      Judge only this diff. Choose block when a migration rewrites existing
+      rows and its reverse is a no-op or missing, drops or narrows a column
+      or deletes a model without a cleanup in the same diff, or adds a unique
+      constraint without a dedupe in the same diff. Choose allow for a new
+      nullable column, an index, a new table, or a migration that is not in
+      the diff. If the diff does not show this clearly, choose allow.
+    criteria:
+      block: Irreversible data rewrite, destructive column change, or unique constraint without a dedupe
+      allow: Schema change is additive, or this diff has no such migration
+    fail_on:
+      - block

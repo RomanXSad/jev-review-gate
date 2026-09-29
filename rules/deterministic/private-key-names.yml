@@ -1,0 +1,7 @@
+id: private-key-names
+message: Refusing a private key filename
+path_patterns:
+  - '(^|/)id_rsa$'
+  - '(^|/)id_ed25519$'
+  - '(^|/)id_ecdsa$'
+  - '\.pfx$'

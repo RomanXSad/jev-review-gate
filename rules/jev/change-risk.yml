@@ -1,0 +1,16 @@
+id: change-risk
+questions:
+  risk:
+    type: score
+    instructions: How risky is publishing a Docker image from this diff?
+    criteria:
+      - "Low: isolated and easy to reverse"
+      - "Moderate: touches shared behavior but has bounded impact"
+      - "High: affects data, auth, payments, deployment, or broad behavior"
+      - "Critical: credible irreversible or security-sensitive impact"
+  needs_human_review:
+    type: noul
+    instructions: Does this diff require a person to look before an image is published?
+    criteria:
+      true: Ambiguous, high-impact, security-sensitive, or difficult to reverse
+      false: Low-impact, well-bounded, and straightforward to reverse

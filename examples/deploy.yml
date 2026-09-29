@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: Jev review gate
-        uses: RomanXSad/jev-review-gate@v0.1.0
+        uses: RomanXSad/jev-review-gate@v1
 
   deploy:
     needs: review-gate

@@ -1,0 +1,21 @@
+# Set enabled to false to skip Jev and allow the protected job.
+# The Actions variable REVIEW_GATE_ENABLED=false does the same without a commit.
+enabled: true
+# Cutoffs are applied by scripts/review_gate.py after Jev returns.
+# A score or noul at or above the cutoff fails the gate.
+# Score uses the question's criteria length (4 levels => 0..3).
+risk_score_gte: 2
+review_noul_gte: 0.65
+# Jev accepts 32k tokens for the state plus the longest question.
+# A unified diff is about 3 characters per token, and the questions need room,
+# so 84k characters is the largest excerpt that stays under that cap.
+max_diff_chars: 84000
+# A single file patch above this size is listed and not sent.
+max_file_patch_chars: 8000
+max_files: 200
+# A diff that is still too large fails closed when it touches one of these trees.
+# Replace them with the directories you ship.
+truncate_fail_globs:
+  - src/**
+  - app/**
+  - .github/workflows/**

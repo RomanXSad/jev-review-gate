@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": ".cursor/hooks/review-gate-pending.py",
+        "matcher": "Shell"
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/review-gate-stop.py"
+      }
+    ]
+  }
+}

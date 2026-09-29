@@ -1,0 +1,44 @@
+name: Jev review gate
+description: Fail this job unless repository rules and TypeSafe Jev allow the diff.
+author: Roman <gdeadbones@gmail.com>
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  rules-path:
+    description: Review-rules directory inside the repository being gated
+    required: false
+    default: .github/review-rules
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install PyYAML
+      shell: bash
+      run: pip install -r "${{ github.action_path }}/requirements.txt"
+
+    - name: Run review gate
+      shell: bash
+      env:
+        TYPESAFE_API_KEY: ${{ env.TYPESAFE_API_KEY }}
+        REVIEW_GATE_ENABLED: ${{ env.REVIEW_GATE_ENABLED }}
+        REVIEW_GATE_DISPATCH: ${{ env.REVIEW_GATE_DISPATCH }}
+        REVIEW_GATE_EXEMPT_ACTORS: ${{ env.REVIEW_GATE_EXEMPT_ACTORS }}
+        REVIEW_GATE_EXEMPT_ACTORS_VAR: ${{ env.REVIEW_GATE_EXEMPT_ACTORS_VAR }}
+        REVIEW_REF_NAME: ${{ github.ref_name }}
+        REVIEW_HEAD: ${{ github.sha }}
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_ACTOR: ${{ github.actor }}
+        PYTHONUNBUFFERED: "1"
+      run: >-
+        python3 "${{ github.action_path }}/scripts/review_gate.py"
+        --repo "${{ github.workspace }}"
+        --rules "${{ inputs.rules-path }}"
+        --output "${{ github.workspace }}/review-report.json"

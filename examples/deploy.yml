@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+    inputs:
+      review_gate_enabled:
+        description: Run the Jev review gate. False lets the protected job start without it.
+        type: boolean
+        default: true
+
+jobs:
+  review-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      REVIEW_GATE_EXEMPT_ACTORS: ${{ secrets.REVIEW_GATE_EXEMPT_ACTORS }}
+      REVIEW_GATE_ENABLED: ${{ vars.REVIEW_GATE_ENABLED }}
+      REVIEW_GATE_DISPATCH: ${{ github.event.inputs.review_gate_enabled }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Jev review gate
+        uses: RomanXSad/jev-review-gate@v0.1.0
+
+  deploy:
+    needs: review-gate
+    if: needs.review-gate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Protected job
+        run: echo "review-gate passed"

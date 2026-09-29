@@ -1,0 +1,17 @@
+id: check-bypass
+questions:
+  skipped_check:
+    type: choice
+    instructions: >
+      Judge only this diff. Choose block when a payment signature, webhook
+      verification, or auth check is skipped for PROD, when a test bypass
+      token becomes valid outside TEST and LOCAL, or when a new route runs
+      a shell or pytest without an auth gate. Choose allow when an existing
+      TEST or LOCAL bypass stays limited to those environments, or when the
+      diff does not touch verification. If the diff does not show this
+      clearly, choose allow.
+    criteria:
+      block: A signature, webhook, or auth check is skipped on a production path, or an unauthenticated shell route was added
+      allow: No check was widened, or the bypass stays limited to TEST and LOCAL
+    fail_on:
+      - block

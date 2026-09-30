@@ -78,9 +78,14 @@ def main() -> int:
                 f"git push succeeded for {sha}. Do not end this turn until "
                 "`bash scripts/wait_review_gate.sh` exits. It waits for the "
                 "GitHub job review-gate on this commit. If it fails, read only "
-                ".cursor/runtime/review-report/review-report.json, show the "
-                "failed rules, and ask the user what to do. Do not edit code "
-                "first. If it passes, say the protected job was allowed to start."
+                ".cursor/runtime/review-report/review-report.json and show the "
+                "failed rules. When change-risk fails, name which pass-bar item "
+                "is missing: a commit message that states the new behavior, "
+                "docs in the diff that agree with it, or a test that asserts it. "
+                "A critical-module change that has all three can score Moderate "
+                "and pass. Ask whether to add the missing item and recommit. "
+                "Do not edit code first. If it passes, say the protected job was "
+                "allowed to start."
             )
         },
         sys.stdout,

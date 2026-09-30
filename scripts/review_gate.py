@@ -64,6 +64,7 @@ class Diff:
     names: list[str]
     patch: str
     branch: str = ""
+    commits: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -240,6 +241,7 @@ def jev_state(diff: Diff, policy: dict) -> dict:
         "omitted_files": omitted[:200],
         "patch_excerpt": excerpt,
         "patch_truncated": len(excerpt) > max_chars,
+        "commit_messages": list(diff.commits)[:30],
     }
 
 
@@ -584,18 +586,22 @@ def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
 
 
 def resolve_base(repo: Path, head: str, successful_shas: list[str] | None = None) -> str:
-    """Last green review that is an ancestor of head, otherwise the parent commit.
+    """Closest green review that is an ancestor of head, otherwise the parent.
 
-    A later commit that only fixes part of a rejection is diffed together with
-    what is still changed since that green review. This is not the default branch.
+    Every commit after that green review is one diff, including reviews that
+    failed in between. A newer green review replaces an older one. This is
+    not the default branch.
     """
     parent = _parent(repo, head)
+    closest = ""
     for sha in successful_shas or []:
         if not sha or sha == head:
             continue
-        if is_ancestor(repo, sha, head):
-            return sha
-    return parent
+        if not is_ancestor(repo, sha, head):
+            continue
+        if not closest or is_ancestor(repo, closest, sha):
+            closest = sha
+    return closest or parent
 
 
 def github_fetch(url: str, token: str) -> dict:
@@ -611,6 +617,18 @@ def github_fetch(url: str, token: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+_RUN_PAGE_SIZE = 30
+_RUN_PAGE_LIMIT = 5
+_HISTORY_LIMIT = 40
+
+
+def _review_gate_succeeded(jobs_payload: dict) -> bool:
+    for job in jobs_payload.get("jobs") or []:
+        if job.get("name") == "review-gate" and job.get("conclusion") == "success":
+            return True
+    return False
+
+
 def successful_review_shas(
     repository: str,
     branch: str,
@@ -618,35 +636,139 @@ def successful_review_shas(
     head: str,
     fetch=github_fetch,
 ) -> tuple[list[str], str]:
-    """Newest-first SHAs whose review-gate job succeeded. Empty when lookup fails."""
+    """SHAs on this branch whose review-gate job succeeded. Empty when lookup fails."""
     if not repository or not branch or not token:
         return [], ""
+    found: list[str] = []
+    seen: set[str] = set()
+    for page in range(1, _RUN_PAGE_LIMIT + 1):
+        url = (
+            "https://api.github.com/repos/"
+            + repository
+            + "/actions/runs?branch="
+            + urllib.parse.quote(branch, safe="")
+            + f"&per_page={_RUN_PAGE_SIZE}&page={page}"
+        )
+        try:
+            payload = fetch(url, token)
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError) as exc:
+            if page == 1:
+                return [], str(exc)
+            break
+        runs = payload.get("workflow_runs") or []
+        if not runs:
+            break
+        for run in runs:
+            sha = str(run.get("head_sha") or "")
+            jobs_url = str(run.get("jobs_url") or "")
+            if not sha or sha == head or sha in seen or not jobs_url:
+                continue
+            seen.add(sha)
+            try:
+                jobs = fetch(jobs_url, token)
+            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+                continue
+            if _review_gate_succeeded(jobs):
+                found.append(sha)
+        if len(runs) < _RUN_PAGE_SIZE:
+            break
+    return found, ""
+
+
+def ancestor_commit_shas(repo: Path, head: str, limit: int = _HISTORY_LIMIT) -> list[str]:
+    """Ancestors of head, closest first. Head itself is not included."""
+    try:
+        text = git_output(
+            repo, ["rev-list", "--max-count", str(limit), f"{head}^"]
+        )
+    except RuntimeError:
+        return []
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def review_gate_succeeded_for_sha(
+    repository: str,
+    sha: str,
+    token: str,
+    fetch=github_fetch,
+) -> bool:
+    """True when this commit's workflow run has a successful review-gate job."""
     url = (
         "https://api.github.com/repos/"
         + repository
-        + "/actions/runs?branch="
-        + urllib.parse.quote(branch, safe="")
-        + "&per_page=30"
+        + "/actions/runs?head_sha="
+        + urllib.parse.quote(sha, safe="")
+        + "&per_page=10"
     )
-    try:
-        payload = fetch(url, token)
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError) as exc:
-        return [], str(exc)
-    found: list[str] = []
-    for run in (payload.get("workflow_runs") or [])[:30]:
-        sha = str(run.get("head_sha") or "")
+    payload = fetch(url, token)
+    for run in payload.get("workflow_runs") or []:
         jobs_url = str(run.get("jobs_url") or "")
-        if not sha or sha == head or not jobs_url:
+        if not jobs_url:
             continue
+        jobs = fetch(jobs_url, token)
+        if _review_gate_succeeded(jobs):
+            return True
+    return False
+
+
+def closest_green_ancestor(
+    repo: Path,
+    head: str,
+    repository: str,
+    token: str,
+    fetch=github_fetch,
+    limit: int = _HISTORY_LIMIT,
+) -> str:
+    """Newest ancestor whose review-gate succeeded. Empty when none is found.
+
+    Used when this branch's run list has no green ancestor. A green review
+    recorded on the branch this one was cut from still counts.
+    """
+    if not repository or not token:
+        return ""
+    for sha in ancestor_commit_shas(repo, head, limit):
         try:
-            jobs = fetch(jobs_url, token)
+            if review_gate_succeeded_for_sha(repository, sha, token, fetch):
+                return sha
         except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
             continue
-        for job in jobs.get("jobs") or []:
-            if job.get("name") == "review-gate" and job.get("conclusion") == "success":
-                found.append(sha)
-                break
-    return found, ""
+    return ""
+
+
+def read_commit_messages(repo: Path, base: str, head: str, limit: int = 30) -> list[dict]:
+    """Subjects and bodies for commits after base, up to head. Empty on failure."""
+    try:
+        text = git_output(
+            repo,
+            [
+                "log",
+                "--reverse",
+                f"--max-count={limit}",
+                "--format=%x1e%H%x1f%s%x1f%b",
+                f"{base}..{head}",
+            ],
+        )
+    except RuntimeError:
+        return []
+    messages = []
+    for block in text.split("\x1e"):
+        block = block.strip("\n")
+        if not block.strip():
+            continue
+        parts = block.split("\x1f", 2)
+        if len(parts) < 2:
+            continue
+        body = parts[2].strip() if len(parts) > 2 else ""
+        if len(body) > 800:
+            body = body[:800] + "…"
+        messages.append(
+            {
+                "sha": parts[0].strip()[:12],
+                "subject": parts[1].strip(),
+                "body": body,
+            }
+        )
+    return messages
 
 
 def read_diff(repo: Path, base: str, head: str) -> Diff:
@@ -660,7 +782,13 @@ def read_diff(repo: Path, base: str, head: str) -> Diff:
     patch = git_output(
         repo, ["diff", "--unified=1", "--no-ext-diff", base, head]
     )
-    return Diff(base=base, head=head, names=names, patch=patch)
+    return Diff(
+        base=base,
+        head=head,
+        names=names,
+        patch=patch,
+        commits=read_commit_messages(repo, base, head),
+    )
 
 
 _LOG_PREFIX = re.compile(r"^[^\t]*\t[^\t]*\t\d{4}-\d{2}-\d{2}T[0-9:.]+Z ")
@@ -769,15 +897,22 @@ def main(argv: list[str] | None = None) -> int:
                 Failure("policy", "missing-policy", "policy.yml is missing")
             ]
         else:
+            repository = os.environ.get("GITHUB_REPOSITORY", "")
+            token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
             shas, lookup_error = successful_review_shas(
-                os.environ.get("GITHUB_REPOSITORY", ""),
+                repository,
                 args.ref_name,
-                os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "",
+                token,
                 head,
             )
             if lookup_error:
                 print(f"Prior review lookup failed, using the parent commit: {lookup_error}")
             base = resolve_base(repo, head, shas)
+            if base not in shas and not lookup_error:
+                walked = closest_green_ancestor(repo, head, repository, token)
+                if walked:
+                    base = walked
+                    shas = [walked, *shas]
             span = "last success" if base in shas else "parent"
             diff = read_diff(repo, base, head)
             diff.branch = args.ref_name

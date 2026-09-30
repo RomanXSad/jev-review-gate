@@ -26,7 +26,7 @@ The other hole is the commit window. A branch often fails the gate more than onc
 ## ✨ What this brings
 
 - The protected job starts only after this one exits 0. Jev does not merge, tag, or push.
-- You write the questions. Jev answers them on the diff from the last green `review-gate` through the current commit, so a partial fix is judged together with what remains.
+- You write the questions. Jev answers them on the diff from the closest green `review-gate` through the current commit. Failed reviews in between stay in that diff, and the commit messages travel with the patch.
 - Secret paths and key material fail locally and are not uploaded.
 - A failure is a short JSON report in the job log: the rule, the choice or score, and the commit range.
 - One composite action plus a rule pack you can edit. The starter pack covers unsafe migrations, production stubs, and skipped checks.
@@ -37,7 +37,7 @@ The other hole is the commit window. A branch often fails the gate more than onc
 2. Copy [`rules/`](rules/) to `.github/review-rules` in the repository you want to gate. Edit the prompts. A missing or empty pack fails the gate.
 3. Add a job that checks out the repository with full history and calls this action. Put the protected work in a second job that needs the first.
 
-`fetch-depth: 0` is required. The gate diffs from the last successful `review-gate` on that branch through the current commit, or from the parent commit when this branch has no green run yet.
+`fetch-depth: 0` is required. The gate diffs from the closest ancestor whose `review-gate` job succeeded through the current commit. Failed reviews between those commits stay in the diff. A later success moves the base forward. When this branch's own runs have no green ancestor, the gate checks the last 40 commits, including a success recorded on the branch this one was cut from. The parent commit is the base only when none of those succeeded.
 
 ```yaml
 name: CI
@@ -116,7 +116,7 @@ The pack in [`rules/`](rules/) is a starting point, not a policy for every codeb
 | `unsafe-migration` | Jev choice | irreversible data rewrite, destructive column change, or a unique constraint without a dedupe |
 | `prod-stub` | Jev choice | production code gains a test host, `ALLOWED_HOSTS` of `*`, a local secret, or a localhost API |
 | `check-bypass` | Jev choice | a signature, webhook, or auth check is skipped on a production path |
-| `change-risk` | Jev score and uncertainty | score ≥ 2, or review uncertainty ≥ 0.65 |
+| `change-risk` | Jev score and uncertainty | score ≥ 2, or review uncertainty ≥ 0.65. A data, auth, payment, or deploy change can score Moderate when the commit message, the docs in the diff, and a test all state the new behavior |
 
 Choice questions live in `rules/jev/*.yml`. The local combiner treats `fail_on: [block]` as a failure. Score and uncertainty cutoffs live in `rules/policy.yml`.
 
@@ -144,7 +144,7 @@ Known gaps. None of these block copying the action into a repository. They do ch
 - **No second call for the files that were omitted.** Splitting the diff into batches under the token cap, and failing the gate if any batch blocks, is not built. A single source file whose patch is over about 84,000 characters still cannot be sent whole.
 - **`change-risk` scores the excerpt.** The score and the uncertainty are about the text Jev received. An omitted file can make a small change look critical, or a risky file never enter the score.
 - **Fail-closed globs are a starter list.** `rules/policy.yml` refuses a truncated diff when it touches `src/**`, `app/**`, or `.github/workflows/**`. A repository that keeps code elsewhere should replace those globs before relying on the size check.
-- **The last green run is the newest of 30 Actions runs.** A noisy branch can push that success off the page. The gate then diffs `HEAD^` and will not see an earlier rejection that is still in the branch. A failed lookup does the same and only prints a warning.
+- **A green review older than the lookup window is missed.** The gate reads up to 150 recent Actions runs, then walks the last 40 ancestors. Older than that, the base is the parent commit, and a failed lookup does the same after a warning.
 - **The gate job name is fixed.** The base lookup and the Cursor wait script both search for a job named `review-gate`. Another name silently reviews only the parent commit.
 - **The full bypass also skips secret checks.** `REVIEW_GATE_ENABLED=false` and `policy.yml` `enabled: false` do not call Jev and do not run the path rules. There is no separate "a named person approved this run" step. `REVIEW_GATE_EXEMPT_ACTORS` skips only `change-risk`.
 - **Starter prompts assume a web backend.** Migrations, `ALLOWED_HOSTS`, webhook signatures, and a localhost API bundle are the examples. Other stacks need their own questions. The "if this diff does not show it clearly, allow" line keeps noise down and also lets an omitted file pass.

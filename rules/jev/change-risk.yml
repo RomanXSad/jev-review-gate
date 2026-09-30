@@ -2,15 +2,28 @@ id: change-risk
 questions:
   risk:
     type: score
-    instructions: How risky is publishing a Docker image from this diff?
+    instructions: >
+      How risky is letting the protected job run from this diff? Read
+      commit_messages and the patch together. A change to data, auth,
+      payments, deployment, or broad behavior is Moderate when the pass bar
+      is met, not High. The pass bar is all three: a commit message that
+      states the new behavior, docs in this diff that agree with that
+      behavior (no documentation drift), and a test that asserts it. The
+      module name alone is not High. If the diff does not show this clearly,
+      choose High.
     criteria:
-      - "Low: isolated and easy to reverse"
-      - "Moderate: touches shared behavior but has bounded impact"
-      - "High: affects data, auth, payments, deployment, or broad behavior"
-      - "Critical: credible irreversible or security-sensitive impact"
+      - "Low: no runtime behavior change, or an isolated reversible fix outside data, auth, payments, and deployment"
+      - "Moderate: critical-module change that meets the pass bar — the commit message explains the new behavior, docs in the diff agree, and a test asserts it"
+      - "High: critical-module change missing the pass bar — unexplained commit, docs still state the old rule or are absent, or no test of the new behavior"
+      - "Critical: irreversible data loss, a new auth or payment bypass, or a secret on a production path"
   needs_human_review:
     type: noul
-    instructions: Does this diff require a person to look before an image is published?
+    instructions: >
+      Does this diff require a person to look before the protected job runs?
+      Answer false when impact is low, or when a critical-module change meets
+      the pass bar (explained commit, docs agree, test present) and is
+      reversible. Answer true when that bar is missing, the diff is
+      ambiguous, or the change is hard to reverse.
     criteria:
-      true: Ambiguous, high-impact, security-sensitive, or difficult to reverse
-      false: Low-impact, well-bounded, and straightforward to reverse
+      true: Unexplained critical-module change, documentation drift, missing test, or hard to reverse
+      false: Low-impact, or a critical-module change that meets the pass bar and is reversible

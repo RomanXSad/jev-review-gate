@@ -40,10 +40,15 @@ def main() -> int:
                 ".cursor/runtime/review-report/review-report.json: each failed "
                 "rule, Jev's choice or score, and the diff range. The protected "
                 "job did not run. A later commit is reviewed from the last success, "
-                "so a partial fix is judged with what remains. Ask whether to "
-                "fix and recommit, set REVIEW_GATE_ENABLED to false to build "
-                "without Jev, or stop. Do not edit code until they choose. "
-                "On success, tell them the protected job was allowed to start."
+                "so a partial fix is judged with what remains. When the failed "
+                "rule is change-risk, name which pass-bar item is missing: a "
+                "commit message that states the new behavior, docs in the diff "
+                "that agree with it, or a test that asserts it. A "
+                "critical-module change with all three can pass. Ask whether to "
+                "add the missing item and recommit, set REVIEW_GATE_ENABLED to "
+                "false to run the protected job without Jev, or stop. Do not "
+                "edit code until they choose. On success, tell them the "
+                "protected job was allowed to start."
             )
         },
         sys.stdout,

@@ -326,6 +326,8 @@ def test_stop_hook_followup_when_pending(tmp_path):
     message = json.loads(proc.stdout)["followup_message"]
     assert "abc123" in message
     assert "wait_review_gate.sh" in message
+    assert "pass-bar" in message
+    assert "commit message" in message
 
 
 def test_stop_hook_silent_without_marker(tmp_path):
@@ -387,6 +389,7 @@ def test_pending_hook_writes_marker(tmp_path):
     assert proc.returncode == 0
     context = json.loads(proc.stdout)["additional_context"]
     assert "wait_review_gate.sh" in context
+    assert "pass-bar" in context
     marker = json.loads(
         (tmp_path / ".cursor" / "runtime" / "review-gate-pending.json").read_text(
             encoding="utf-8"
@@ -438,6 +441,72 @@ def test_diff_starts_at_last_success_and_keeps_unfixed_changes(tmp_path):
     assert "log()" not in diff.patch
     only_latest = review_gate.resolve_base(tmp_path, head, [])
     assert only_latest == parent
+
+
+def _commit_file(repo, name, text):
+    (repo / name).write_text(text, encoding="utf-8")
+    _git(repo, "add", name)
+    _git(repo, "commit", "-m", text.strip())
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+
+
+def test_diff_includes_every_commit_since_the_latest_pass(tmp_path):
+    """1 pass, 2 pass, 3 fail, 4 pass, 5 fail, 6 fail, 7 current → diff 4..7."""
+    _git(tmp_path, "init", "-b", "feature")
+    shas = [
+        _commit_file(tmp_path, "readme", f"{label}\n")
+        for label in ("c1", "c2", "c3", "c4", "c5", "c6", "c7")
+    ]
+    passed = [shas[1], shas[3], shas[0]]
+    base = review_gate.resolve_base(tmp_path, shas[6], passed)
+    assert base == shas[3]
+    assert base != shas[1]
+    diff = review_gate.read_diff(tmp_path, base, shas[6])
+    assert "c7" in diff.patch
+    assert "c3" not in diff.patch
+
+
+def test_commit_messages_are_sent_with_the_patch(tmp_path):
+    _git(tmp_path, "init", "-b", "feature")
+    base = _commit_file(tmp_path, "readme", "base\n")
+    _git(
+        tmp_path,
+        "commit",
+        "--allow-empty",
+        "-m",
+        "State the new behavior in the commit message",
+    )
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True
+    ).strip()
+    diff = review_gate.read_diff(tmp_path, base, head)
+    assert diff.commits[0]["subject"].startswith("State the new behavior")
+    state = review_gate.jev_state(diff, {"max_diff_chars": 1000, "max_file_patch_chars": 8000})
+    assert state["commit_messages"][0]["subject"].startswith("State the new behavior")
+
+
+def test_history_walk_finds_green_ancestor_outside_this_branch_runs(tmp_path):
+    _git(tmp_path, "init", "-b", "feature")
+    green = _commit_file(tmp_path, "readme", "green\n")
+    _commit_file(tmp_path, "readme", "failed\n")
+    head = _commit_file(tmp_path, "readme", "current\n")
+
+    def fetch(url, token):
+        if f"head_sha={green}" in url:
+            return {"workflow_runs": [{"jobs_url": "https://example/jobs/green"}]}
+        if "head_sha=" in url:
+            return {"workflow_runs": [{"jobs_url": "https://example/jobs/other"}]}
+        if url.endswith("/green"):
+            return {"jobs": [{"name": "review-gate", "conclusion": "success"}]}
+        return {"jobs": [{"name": "review-gate", "conclusion": "failure"}]}
+
+    found = review_gate.closest_green_ancestor(
+        tmp_path, head, "org/repo", "token", fetch
+    )
+    assert found == green
+    assert review_gate.resolve_base(tmp_path, head, []) != green
 
 
 def test_last_success_lookup_skips_failed_runs_and_current_sha():

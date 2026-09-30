@@ -1,6 +1,6 @@
 [project]
 name = "jev-review-gate"
-version = "0.1.0"
+version = "1.1.0"
 description = "GitHub Actions gate that asks TypeSafe Jev before a protected job runs."
 readme = "README.md"
 license = "MIT"

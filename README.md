@@ -5,7 +5,7 @@
 
 A GitHub Actions check that reads your diff, applies a few local rules, and asks [TypeSafe Jev](https://typesafe.ai) (`POST https://api.typesafe.ai/v1/systemone`, model `jev-latest`) the questions in your rule pack. The action exits 0 or 1. Jev does not merge, tag, or push. Any later job that `needs` this one stays skipped until the gate passes.
 
-**v1.0.0.** Free to use, copy, and change under the [MIT license](LICENSE). Read the [limits](#-todo) before you treat a green run on a large diff as a full review.
+**v1.1.0.** Free to use, copy, and change under the [MIT license](LICENSE). Read the [limits](#-todo) before you treat a green run on a large diff as a full review.
 
 Author: Roman
 
@@ -78,7 +78,7 @@ jobs:
       - run: echo "review-gate passed"
 ```
 
-The same file is checked in as [`examples/deploy.yml`](examples/deploy.yml). Pin `@v1` for the stable line, or `@v1.0.0` for this exact release. The job that calls the action must be named `review-gate`, because later runs look up that job name when choosing the diff base.
+The same file is checked in as [`examples/deploy.yml`](examples/deploy.yml). Pin `@v1` for the stable line, or `@v1.1.0` for this exact release. The job that calls the action must be named `review-gate`, because later runs look up that job name when choosing the diff base.
 
 Set the secrets and variables on the calling repository, not in this action:
 

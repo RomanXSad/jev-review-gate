@@ -21,6 +21,6 @@ body:
     attributes:
       label: Action ref
       description: Tag or SHA, for example v0.1.0
-      placeholder: v1.1.0
+      placeholder: v1.1.1
     validations:
       required: true

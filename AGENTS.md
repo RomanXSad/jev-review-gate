@@ -14,8 +14,8 @@ Jev does not merge, tag, or push. `scripts/review_gate.py` exits 0 or 1. A later
 
 ## How a push is judged
 
-1. `successful_review_shas` lists up to 150 recent Actions runs on the branch and keeps SHAs whose job `review-gate` succeeded.
-2. `resolve_base` picks the closest of those that is an ancestor of `HEAD`. If none is, `closest_green_ancestor` walks the last 40 commits, including a success from the branch this one was cut from. The parent is the base only when that walk finds nothing.
+1. `closest_green_ancestor` walks the last 40 first-parent commits and stops at the newest SHA whose `review-gate` job succeeded. A lookup error stops the walk. The parent is the base when that happens, or when no green review is found. A merged side branch is not searched.
+2. The jobs request asks for 100 jobs per run. The default page of 30 can hide `review-gate` on a workflow that has more jobs, which used to look like a failure and the walk then continued to an older green commit.
 3. `read_diff` runs `git diff --unified=1 --no-ext-diff` and attaches `commit_messages` for `base..HEAD`. Jev receives both.
 4. Deterministic rules in `rules/deterministic/` scan paths and added lines. A hit does not call Jev.
 5. `filter_patch_for_jev` drops media, lockfiles, and file patches over `max_file_patch_chars`, then drops more files until the excerpt is under `max_diff_chars`.

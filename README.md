@@ -37,7 +37,7 @@ The other hole is the commit window. A branch often fails the gate more than onc
 2. Copy [`rules/`](rules/) to `.github/review-rules` in the repository you want to gate. Edit the prompts. A missing or empty pack fails the gate.
 3. Add a job that checks out the repository with full history and calls this action. Put the protected work in a second job that needs the first.
 
-`fetch-depth: 0` is required. The gate diffs from the closest ancestor whose `review-gate` job succeeded through the current commit. Failed reviews between those commits stay in the diff. A later success moves the base forward. When this branch's own runs have no green ancestor, the gate checks the last 40 commits, including a success recorded on the branch this one was cut from. The parent commit is the base only when none of those succeeded.
+`fetch-depth: 0` is required. The gate walks the first-parent line and stops at the nearest commit whose `review-gate` job succeeded. Failed reviews after that commit stay in the diff. A green commit that is only on a merged side branch is not the base. The parent commit is the base when none of the last 40 first-parent ancestors succeeded, or when a status lookup fails before a green review is found. A failed lookup does not keep walking toward an older commit.
 
 ```yaml
 name: CI
@@ -144,7 +144,7 @@ Known gaps. None of these block copying the action into a repository. They do ch
 - **No second call for the files that were omitted.** Splitting the diff into batches under the token cap, and failing the gate if any batch blocks, is not built. A single source file whose patch is over about 84,000 characters still cannot be sent whole.
 - **`change-risk` scores the excerpt.** The score and the uncertainty are about the text Jev received. An omitted file can make a small change look critical, or a risky file never enter the score.
 - **Fail-closed globs are a starter list.** `rules/policy.yml` refuses a truncated diff when it touches `src/**`, `app/**`, or `.github/workflows/**`. A repository that keeps code elsewhere should replace those globs before relying on the size check.
-- **A green review older than the lookup window is missed.** The gate reads up to 150 recent Actions runs, then walks the last 40 ancestors. Older than that, the base is the parent commit, and a failed lookup does the same after a warning.
+- **A green review older than 40 first-parent commits is missed.** The walk stops at the newest success it can confirm. If that confirmation errors, the base is the parent commit rather than an older green review.
 - **The gate job name is fixed.** The base lookup and the Cursor wait script both search for a job named `review-gate`. Another name silently reviews only the parent commit.
 - **The full bypass also skips secret checks.** `REVIEW_GATE_ENABLED=false` and `policy.yml` `enabled: false` do not call Jev and do not run the path rules. There is no separate "a named person approved this run" step. `REVIEW_GATE_EXEMPT_ACTORS` skips only `change-risk`.
 - **Starter prompts assume a web backend.** Migrations, `ALLOWED_HOSTS`, webhook signatures, and a localhost API bundle are the examples. Other stacks need their own questions. The "if this diff does not show it clearly, allow" line keeps noise down and also lets an omitted file pass.

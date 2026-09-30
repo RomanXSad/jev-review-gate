@@ -617,8 +617,6 @@ def github_fetch(url: str, token: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
-_RUN_PAGE_SIZE = 30
-_RUN_PAGE_LIMIT = 5
 _HISTORY_LIMIT = 40
 
 
@@ -629,57 +627,23 @@ def _review_gate_succeeded(jobs_payload: dict) -> bool:
     return False
 
 
-def successful_review_shas(
-    repository: str,
-    branch: str,
-    token: str,
-    head: str,
-    fetch=github_fetch,
-) -> tuple[list[str], str]:
-    """SHAs on this branch whose review-gate job succeeded. Empty when lookup fails."""
-    if not repository or not branch or not token:
-        return [], ""
-    found: list[str] = []
-    seen: set[str] = set()
-    for page in range(1, _RUN_PAGE_LIMIT + 1):
-        url = (
-            "https://api.github.com/repos/"
-            + repository
-            + "/actions/runs?branch="
-            + urllib.parse.quote(branch, safe="")
-            + f"&per_page={_RUN_PAGE_SIZE}&page={page}"
-        )
-        try:
-            payload = fetch(url, token)
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError) as exc:
-            if page == 1:
-                return [], str(exc)
-            break
-        runs = payload.get("workflow_runs") or []
-        if not runs:
-            break
-        for run in runs:
-            sha = str(run.get("head_sha") or "")
-            jobs_url = str(run.get("jobs_url") or "")
-            if not sha or sha == head or sha in seen or not jobs_url:
-                continue
-            seen.add(sha)
-            try:
-                jobs = fetch(jobs_url, token)
-            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
-                continue
-            if _review_gate_succeeded(jobs):
-                found.append(sha)
-        if len(runs) < _RUN_PAGE_SIZE:
-            break
-    return found, ""
-
-
 def ancestor_commit_shas(repo: Path, head: str, limit: int = _HISTORY_LIMIT) -> list[str]:
-    """Ancestors of head, closest first. Head itself is not included."""
+    """First-parent ancestors of head, closest first. Head itself is not included.
+
+    ``--first-parent`` stays on this branch's line. A green commit that is
+    only reachable through a merged side branch is not a candidate, so the
+    base cannot jump to the bottom of that side history.
+    """
     try:
         text = git_output(
-            repo, ["rev-list", "--max-count", str(limit), f"{head}^"]
+            repo,
+            [
+                "rev-list",
+                "--first-parent",
+                "--max-count",
+                str(limit),
+                f"{head}^",
+            ],
         )
     except RuntimeError:
         return []
@@ -705,7 +669,8 @@ def review_gate_succeeded_for_sha(
         jobs_url = str(run.get("jobs_url") or "")
         if not jobs_url:
             continue
-        jobs = fetch(jobs_url, token)
+        join = "&" if "?" in jobs_url else "?"
+        jobs = fetch(f"{jobs_url}{join}per_page=100", token)
         if _review_gate_succeeded(jobs):
             return True
     return False
@@ -719,19 +684,17 @@ def closest_green_ancestor(
     fetch=github_fetch,
     limit: int = _HISTORY_LIMIT,
 ) -> str:
-    """Newest ancestor whose review-gate succeeded. Empty when none is found.
+    """Newest first-parent ancestor whose review-gate succeeded.
 
-    Used when this branch's run list has no green ancestor. A green review
-    recorded on the branch this one was cut from still counts.
+    Stops at the first green review. A lookup error propagates so the caller
+    uses the parent commit. It does not keep walking toward an older green
+    review, which is what made the diff start at the bottom of the branch.
     """
     if not repository or not token:
         return ""
     for sha in ancestor_commit_shas(repo, head, limit):
-        try:
-            if review_gate_succeeded_for_sha(repository, sha, token, fetch):
-                return sha
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
-            continue
+        if review_gate_succeeded_for_sha(repository, sha, token, fetch):
+            return sha
     return ""
 
 
@@ -899,21 +862,26 @@ def main(argv: list[str] | None = None) -> int:
         else:
             repository = os.environ.get("GITHUB_REPOSITORY", "")
             token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
-            shas, lookup_error = successful_review_shas(
-                repository,
-                args.ref_name,
-                token,
-                head,
-            )
+            walked = ""
+            lookup_error = ""
+            if repository and token:
+                try:
+                    walked = closest_green_ancestor(repo, head, repository, token)
+                except (
+                    urllib.error.URLError,
+                    TimeoutError,
+                    OSError,
+                    json.JSONDecodeError,
+                    ValueError,
+                ) as exc:
+                    lookup_error = str(exc)
             if lookup_error:
-                print(f"Prior review lookup failed, using the parent commit: {lookup_error}")
-            base = resolve_base(repo, head, shas)
-            if base not in shas and not lookup_error:
-                walked = closest_green_ancestor(repo, head, repository, token)
-                if walked:
-                    base = walked
-                    shas = [walked, *shas]
-            span = "last success" if base in shas else "parent"
+                print(
+                    "Prior review lookup failed, using the parent commit: "
+                    f"{lookup_error}"
+                )
+            base = walked or _parent(repo, head)
+            span = "last success" if walked else "parent"
             diff = read_diff(repo, base, head)
             diff.branch = args.ref_name
             print(

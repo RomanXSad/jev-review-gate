@@ -498,7 +498,7 @@ def test_history_walk_finds_green_ancestor_outside_this_branch_runs(tmp_path):
             return {"workflow_runs": [{"jobs_url": "https://example/jobs/green"}]}
         if "head_sha=" in url:
             return {"workflow_runs": [{"jobs_url": "https://example/jobs/other"}]}
-        if url.endswith("/green"):
+        if "/jobs/green" in url:
             return {"jobs": [{"name": "review-gate", "conclusion": "success"}]}
         return {"jobs": [{"name": "review-gate", "conclusion": "failure"}]}
 
@@ -509,29 +509,80 @@ def test_history_walk_finds_green_ancestor_outside_this_branch_runs(tmp_path):
     assert review_gate.resolve_base(tmp_path, head, []) != green
 
 
-def test_last_success_lookup_skips_failed_runs_and_current_sha():
+def test_history_walk_stops_at_the_newest_green(tmp_path):
+    """An older green review must not become the base once a newer one exists."""
+    _git(tmp_path, "init", "-b", "feature")
+    older = _commit_file(tmp_path, "readme", "older\n")
+    newer = _commit_file(tmp_path, "readme", "newer\n")
+    head = _commit_file(tmp_path, "readme", "current\n")
+    asked = []
+
     def fetch(url, token):
-        if "runs?" in url:
-            assert "feature%2Fexample" in url
-            assert "manual.yaml" not in url
-            return {
-                "workflow_runs": [
-                    {"head_sha": "new", "jobs_url": "https://example/jobs/new"},
-                    {"head_sha": "bad", "jobs_url": "https://example/jobs/bad"},
-                    {"head_sha": "good", "jobs_url": "https://example/jobs/good"},
-                ]
-            }
-        if url.endswith("/bad"):
-            return {"jobs": [{"name": "review-gate", "conclusion": "failure"}]}
-        if url.endswith("/good"):
+        if "head_sha=" in url:
+            sha = url.split("head_sha=", 1)[1].split("&", 1)[0]
+            asked.append(sha)
+            if sha in (older, newer):
+                return {"workflow_runs": [{"jobs_url": f"https://example/jobs/{sha}"}]}
+            return {"workflow_runs": []}
+        if f"/jobs/{newer}" in url or f"/jobs/{older}" in url:
             return {"jobs": [{"name": "review-gate", "conclusion": "success"}]}
+        return {"jobs": [{"name": "review-gate", "conclusion": "failure"}]}
+
+    found = review_gate.closest_green_ancestor(
+        tmp_path, head, "org/repo", "token", fetch
+    )
+    assert found == newer
+    assert older not in asked
+
+
+def test_lookup_error_does_not_fall_through_to_an_older_green(tmp_path):
+    _git(tmp_path, "init", "-b", "feature")
+    older = _commit_file(tmp_path, "readme", "older\n")
+    newer = _commit_file(tmp_path, "readme", "newer\n")
+    head = _commit_file(tmp_path, "readme", "current\n")
+
+    def fetch(url, token):
+        if f"head_sha={newer}" in url:
+            raise review_gate.urllib.error.URLError("timed out")
+        if f"head_sha={older}" in url:
+            return {"workflow_runs": [{"jobs_url": "https://example/jobs/older"}]}
         return {"jobs": [{"name": "review-gate", "conclusion": "success"}]}
 
-    shas, error = review_gate.successful_review_shas(
-        "org/repo", "feature/example", "token", "new", fetch
+    with pytest.raises(review_gate.urllib.error.URLError):
+        review_gate.closest_green_ancestor(
+            tmp_path, head, "org/repo", "token", fetch
+        )
+
+
+def test_history_walk_stays_on_the_first_parent(tmp_path):
+    _git(tmp_path, "init", "-b", "feature")
+    _commit_file(tmp_path, "readme", "base\n")
+    _git(tmp_path, "checkout", "-b", "side")
+    side = _commit_file(tmp_path, "side", "side\n")
+    _git(tmp_path, "checkout", "feature")
+    green = _commit_file(tmp_path, "readme", "green\n")
+    _git(tmp_path, "merge", "--no-ff", "side", "-m", "merge")
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True
+    ).strip()
+    asked = []
+
+    def fetch(url, token):
+        if "head_sha=" not in url:
+            return {"jobs": [{"name": "review-gate", "conclusion": "success"}]}
+        sha = url.split("head_sha=", 1)[1].split("&", 1)[0]
+        asked.append(sha)
+        if sha == green:
+            return {"workflow_runs": [{"jobs_url": "https://example/jobs/green"}]}
+        if sha == side:
+            return {"workflow_runs": [{"jobs_url": "https://example/jobs/side"}]}
+        return {"workflow_runs": []}
+
+    found = review_gate.closest_green_ancestor(
+        tmp_path, head, "org/repo", "token", fetch
     )
-    assert error == ""
-    assert shas == ["good"]
+    assert found == green
+    assert side not in asked
 
 
 def test_exempt_actor_skips_only_change_risk(monkeypatch):

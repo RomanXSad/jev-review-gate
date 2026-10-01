@@ -11,17 +11,13 @@ Author: Roman
 
 ## 🎯 The problem
 
-A workflow that builds or deploys on every push starts that job because the push succeeded. Nothing in the pipeline reads the diff and decides whether this change is safe to ship.
+Code review is the bottleneck. A change sits until someone reads the diff and answers the same questions again: will this migration destroy data, does production now skip an auth or payment check, is this safe to ship.
 
-These are the changes that get through:
+The usual stand-in is an LLM used as a judge. You send the whole review and wait for a long written verdict. That call is expensive, slow, and still non-deterministic. The next run can write a different essay, and the workflow has no stable pass or fail to branch on.
 
-- A migration rewrites or deletes existing data, and the reverse is a no-op.
-- Production code gains a test host, `ALLOWED_HOSTS` of `*`, a local-only secret, or a frontend bundle that calls localhost.
-- A payment signature, webhook check, or auth gate is skipped outside test, or a new route runs a shell with no login.
+This gate asks those same questions in natural language and takes a short answer: a choice or a score. The call is cheap and returns fast enough to run before the protected job. You write the questions. The model answers them.
 
-A regex can catch a private key in the diff. It cannot tell an irreversible migration from a new nullable column, or a bypass that stays in test from one that now runs in production.
-
-The other hole is the commit window. A branch often fails the gate more than once, and the last commit fixes only part of what the earlier commits introduced. A review of that last commit alone leaves the rest of the unsafe diff in the branch, and the protected job still ships it.
+The tradeoff is the token limit. One call holds about 84,000 characters of diff. A larger code review has to be split so each part fits. One slice can omit the hunk that makes the change safe or unsafe, so a green result on a cut diff is not a review of the whole change. Splitting into several calls is not built yet. A diff that is still over the cap and touches `src/**`, `app/**`, or `.github/workflows/**` fails closed. See [Todo](#-todo).
 
 ## ✨ What this brings
 
